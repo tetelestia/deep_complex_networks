@@ -15,7 +15,7 @@ from keras.layers.recurrent import Recurrent
 from keras.utils import conv_utils
 from keras.models import Model
 import numpy as np
-from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
+# from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from .fft import fft, ifft, fft2, ifft2
 from .bn import ComplexBN as complex_normalization
 from .bn import sqrt_init
@@ -165,7 +165,7 @@ class ComplexConv(Layer):
                                                       'kernel_size')
         self.strides = conv_utils.normalize_tuple(strides, rank, 'strides')
         self.padding = conv_utils.normalize_padding(padding)
-        self.data_format = 'channels_last' if rank == 1 else conv_utils.normalize_data_format(data_format)
+        self.data_format = 'channels_last' if rank == 1 else K.normalize_data_format(data_format)
         self.dilation_rate = conv_utils.normalize_tuple(dilation_rate, rank,
                                                         'dilation_rate')
         self.activation = activations.get(activation)
@@ -280,24 +280,26 @@ class ComplexConv(Layer):
 
     def call(self, inputs):
         channel_axis = 1 if self.data_format == 'channels_first' else -1
-        input_dim    = K.shape(inputs)[channel_axis] // 2
+        input_dim = K.shape(inputs)[channel_axis] // 2
         if self.rank == 1:
-            f_real   = self.kernel[:, :, :self.filters]
-            f_imag   = self.kernel[:, :, self.filters:]
+            f_real = self.kernel[:, :, :self.filters]
+            f_imag = self.kernel[:, :, self.filters:]
         elif self.rank == 2:
-            f_real   = self.kernel[:, :, :, :self.filters]
-            f_imag   = self.kernel[:, :, :, self.filters:]
+            f_real = self.kernel[:, :, :, :self.filters]
+            f_imag = self.kernel[:, :, :, self.filters:]
         elif self.rank == 3:
-            f_real   = self.kernel[:, :, :, :, :self.filters]
-            f_imag   = self.kernel[:, :, :, :, self.filters:]
+            f_real = self.kernel[:, :, :, :, :self.filters]
+            f_imag = self.kernel[:, :, :, :, self.filters:]
 
-        convArgs = {"strides":       self.strides[0]       if self.rank == 1 else self.strides,
-                    "padding":       self.padding,
-                    "data_format":   self.data_format,
+        convArgs = {"strides": self.strides[0] if self.rank == 1 else self.strides,
+                    "padding": self.padding,
+                    "data_format": self.data_format,
                     "dilation_rate": self.dilation_rate[0] if self.rank == 1 else self.dilation_rate}
         if self.transposed:
-            convFunc = {1: K.conv1d_transpose,
-                        2: K.conv2d_transpose,
+            convArgs.pop("dilation_rate", None)
+            convArgs["output_shape"] = conv_transpose_output_length(input_dim, np.min(self.kernel_size),
+                                                                    self.padding, np.min(self.strides))
+            convFunc = {2: K.conv2d_transpose,
                         3: K.conv3d_transpose}[self.rank]
         else:
             convFunc = {1: K.conv1d,
@@ -311,11 +313,11 @@ class ComplexConv(Layer):
             if   self.rank == 1:
                 f_real = K.permute_dimensions(f_real, (2,1,0))
                 f_imag = K.permute_dimensions(f_imag, (2,1,0))
-                f      = K.concatenate([f_real, f_imag], axis=0)
+                f = K.concatenate([f_real, f_imag], axis=0)
                 fshape = K.shape(f)
-                f      = K.reshape(f, (fshape[0] * fshape[1], fshape[2]))
-                f      = ifft(f)
-                f      = K.reshape(f, fshape)
+                f = K.reshape(f, (fshape[0] * fshape[1], fshape[2]))
+                f = ifft(f)
+                f = K.reshape(f, fshape)
                 f_real = f[:fshape[0]//2]
                 f_imag = f[fshape[0]//2:]
                 f_real = K.permute_dimensions(f_real, (2,1,0))
@@ -323,11 +325,11 @@ class ComplexConv(Layer):
             elif self.rank == 2:
                 f_real = K.permute_dimensions(f_real, (3,2,0,1))
                 f_imag = K.permute_dimensions(f_imag, (3,2,0,1))
-                f      = K.concatenate([f_real, f_imag], axis=0)
+                f = K.concatenate([f_real, f_imag], axis=0)
                 fshape = K.shape(f)
-                f      = K.reshape(f, (fshape[0] * fshape[1], fshape[2], fshape[3]))
-                f      = ifft2(f)
-                f      = K.reshape(f, fshape)
+                f = K.reshape(f, (fshape[0] * fshape[1], fshape[2], fshape[3]))
+                f = ifft2(f)
+                f = K.reshape(f, fshape)
                 f_real = f[:fshape[0]//2]
                 f_imag = f[fshape[0]//2:]
                 f_real = K.permute_dimensions(f_real, (2,3,1,0))
@@ -946,7 +948,6 @@ class WeightNorm_Conv(_Conv):
         return dict(list(base_config.items()) + list(config.items()))
 
 # Aliases
-
 ComplexConvolution1D = ComplexConv1D
 ComplexConvolution2D = ComplexConv2D
 ComplexConvolution3D = ComplexConv3D
